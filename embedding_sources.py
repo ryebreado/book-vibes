@@ -61,24 +61,15 @@ class GoodbooksEmbeddings(EmbeddingSource):
         self.books = books.set_index('book_id')
     
     def get_embedding(self, book_id: str) -> Optional[np.ndarray]:
-        """Get embedding for ONE specific book"""
-        # book_id comes in as string (interface consistency)
-        # but our book_ids are integers 1-10000
-        try:
-            book_id_int = int(book_id)
-            # our embeddings are stored as [book1_embedding, book2_embedding, ...]
-            # but book_ids might not be 0-indexed! book_id=1 should map to index 0
-            if book_id_int in self.book_ids:
-                idx = self.book_ids.index(book_id_int)
-                return self.book_embeddings[idx]  # returns 1D array of length n_components
-            return None
-        except ValueError:
-            return None
+        book_id_int = int(book_id)
+        if 1 <= book_id_int <= 10000: 
+            idx = book_id_int - 1  # convert to 0-indexed
+            return self.book_embeddings[idx]
+        return None
     
     def get_embeddings_batch(self, book_ids: List[str]) -> np.ndarray:
         """Get embeddings for MULTIPLE books efficiently"""
-        # instead of calling get_embedding() in a loop (slow),
-        # do vectorized lookup
+        # vectorized lookup
         embeddings = []
         for book_id in book_ids:
             emb = self.get_embedding(book_id)
@@ -93,6 +84,7 @@ class GoodbooksEmbeddings(EmbeddingSource):
     def search_books(self, query: str, max_results: int = 10) -> List[Book]:
         """Fuzzy search books by title/author"""
         # this searches the METADATA, not the embeddings
+        # for inputing books!
         # use the books.csv data for fuzzy matching
         query_lower = query.lower()
         matches = []
@@ -101,7 +93,7 @@ class GoodbooksEmbeddings(EmbeddingSource):
             title = str(book_info['title']).lower()
             author = str(book_info['authors']).lower()  # might be 'authors' not 'author'
             
-            # simple fuzzy matching - could use fuzzywuzzy for better results
+            # simple fuzzy matching
             if query_lower in title or query_lower in author:
                 matches.append(Book(
                     id=str(book_id),
