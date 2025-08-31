@@ -1,6 +1,7 @@
 import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import numpy as np
 
 from embedding_sources import GoodbooksEmbeddings
 from vibe_methods import PCAVibeIdentifier
@@ -24,8 +25,39 @@ print(f"total books: {len(embeddings.get_all_books())}")
 
 
 # test PCA
-seed = [embeddings.get_embedding("1"), embeddings.get_embedding("2")]
-print(f"seed books: \n {embeddings.books[0]} \n {embeddings.books[1]}")
-pca = PCAVibeIdentifier(2)
-pca.fit(seed)
-pca.find_similar(embeddings, embeddings.books)
+seed_book_titles = ["metamorphosis", "stranger", "norwegian wood", "The Great Gatsby", 
+"Notes from Underground", "The Trial"]
+seed_books = []
+seed_embeddings = []
+
+print("Finding seed books:")
+for title in seed_book_titles:
+    matches = embeddings.search_books(title, max_results=1)
+    if matches:
+        book = matches[0]
+        emb = embeddings.get_embedding(book.id)
+        if emb is not None:
+            seed_books.append(book)
+            seed_embeddings.append(emb)
+            print(f"  {book.title} by {book.author}")
+
+# fit the vibe
+vibe = PCAVibeIdentifier(n_components=min(10, len(seed_embeddings) - 1))
+vibe.fit(np.array(seed_embeddings))
+
+# get stats
+stats = vibe.get_stats()
+print(f"\nVibe stats:")
+print(f"  explained variance: {stats['total_explained_variance']:.3f}")
+print(f"  top 3 components: {stats['explained_variance_ratio'][:3]}")
+
+# find similar books
+all_books = embeddings.get_all_books()
+all_embeddings = embeddings.get_embeddings_batch([b.id for b in all_books])
+
+seed_ids = {book.id for book in seed_books}
+recommendations = vibe.find_similar(all_embeddings, all_books, n_results=10, exclude_ids=seed_ids)
+
+print(f"\nTop recommendations:")
+for i, result in enumerate(recommendations[:10]):
+    print(f"  {i+1}. {result.book.title} by {result.book.author} (sim: {result.similarity:.3f})")
