@@ -41,14 +41,6 @@ For popularity-weighted ranking, `books.csv` has a `ratings_count` column (total
 python test.py
 ```
 
-⚠️ **Venv is broken**: `.venv/bin/python` is a dangling symlink to a cleaned-up uv-managed python. The known-working invocation during this session was:
-
-```
-uv run --with scikit-learn --with pandas --with numpy python test.py
-```
-
-When the user rebuilds the venv properly, `python test.py` should work. Don't waste time chasing the venv symlink.
-
 Dependencies: `numpy`, `pandas`, `scikit-learn`, `scipy` (transitively via sklearn, but imported directly in `GoodbookTagsEmbeddings` for `csr_matrix`). See `requirements.txt`.
 
 ## Tuned defaults (empirically validated)

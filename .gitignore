@@ -210,3 +210,4 @@ __marimo__/
 data/processed/
 *.pkl
 .DS_Store
+web_export/
