@@ -42,14 +42,30 @@ class PCAVibeIdentifier(VibeIdentifier):
         self.pca = PCA(n_components=self.n_components)
         self.pca.fit(book_embeddings)
 
-    def find_similar(self, all_embeddings: np.ndarray, all_books: List[Book], n_results: int = 10, exclude_ids: set = None) -> List[BookResult]:
-        """Find books similar to the vibe"""
+    def find_similar(self, all_embeddings: np.ndarray, all_books: List[Book],
+                     n_results: int = 10, exclude_ids: set = None,
+                     popularity: Optional[np.ndarray] = None,
+                     popularity_weight: float = 0.0) -> List[BookResult]:
+        """Find books similar to the vibe.
+
+        If `popularity` (aligned with all_embeddings) and a positive
+        `popularity_weight` are supplied, ranks by
+            similarity - popularity_weight * log(1 + popularity)
+        so that ubiquitous books don't dominate every vibe. The reported
+        similarity is still the raw cosine value — only the ordering changes.
+        """
         if self.vibe_centroid is None:
             raise ValueError("must call fit() first")
 
         similarities = cosine_similarity([self.vibe_centroid], all_embeddings)[0]
 
-        top_indices = np.argsort(similarities)[::-1][:n_results * 2]
+        if popularity is not None and popularity_weight > 0:
+            ranking_score = similarities - popularity_weight * np.log1p(popularity)
+        else:
+            ranking_score = similarities
+
+        # pull more than we need so exclude_ids filtering still leaves n_results
+        top_indices = np.argsort(ranking_score)[::-1][:n_results * 3]
 
         results = []
         for idx in top_indices:

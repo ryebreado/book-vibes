@@ -85,6 +85,33 @@ class EmbeddingSource(ABC):
         with open(cache_file, 'wb') as f:
             pickle.dump(data, f)
 
+    @staticmethod
+    def _match_score(query_lower: str, title: str, author: str):
+        """Return a (tier, title_len) sort key for ranking search hits.
+        Lower is better. Returns None if no match.
+
+        Tiers:
+          0 = exact title match
+          1 = title starts with query
+          2 = query appears as substring of title
+          3 = query appears as substring of author only
+        Within a tier, shorter titles rank higher so e.g. 'One Day'
+        beats 'Me Talk Pretty One Day' for the query 'One Day'.
+        """
+        title_lower = str(title).lower()
+        author_lower = str(author).lower()
+        if title_lower == query_lower:
+            tier = 0
+        elif title_lower.startswith(query_lower):
+            tier = 1
+        elif query_lower in title_lower:
+            tier = 2
+        elif query_lower in author_lower:
+            tier = 3
+        else:
+            return None
+        return (tier, len(title_lower))
+
 class GoodbooksEmbeddings(EmbeddingSource):
     def __init__(self, data_path: str, n_components: int = 50, cache_dir: str = "data/processed"):
         super().__init__(cache_dir)
@@ -150,26 +177,21 @@ class GoodbooksEmbeddings(EmbeddingSource):
         return np.vstack(embeddings)  # stack into 2D array: n_books × n_components
     
     def search_books(self, query: str, max_results: int = 10) -> List[Book]:
-        """Fuzzy search books by title/author"""
-        # this searches the METADATA, not the embeddings
-        # for inputing books
-        # use the books.csv data for fuzzy matching
+        """Fuzzy search books by title/author, ranked by match quality."""
         query_lower = query.lower()
-        matches = []
-        
+        scored = []
         for book_id, book_info in self.books.iterrows():
-            title = str(book_info['title']).lower()
-            author = str(book_info['authors']).lower()  
-            
-            # simple fuzzy matching
-            if query_lower in title or query_lower in author:
-                matches.append(Book(
-                    id=str(book_id),
-                    title=book_info['title'],
-                    author=book_info['authors']
-                ))
-        
-        return matches[:max_results]
+            score = self._match_score(
+                query_lower, book_info['title'], book_info['authors']
+            )
+            if score is not None:
+                scored.append((score, book_id, book_info))
+
+        scored.sort(key=lambda x: x[0])
+        return [
+            Book(id=str(bid), title=info['title'], author=info['authors'])
+            for _, bid, info in scored[:max_results]
+        ]
     
     def get_all_books(self) -> List[Book]:
         """Return all available books"""
@@ -308,22 +330,21 @@ class GoodbookTagsEmbeddings(EmbeddingSource):
 
     def search_books(self, query: str, max_results: int = 10) -> List[Book]:
         query_lower = query.lower()
-        matches = []
-
+        scored = []
         for book_id, book_info in self.books.iterrows():
             if str(book_id) not in self.book_id_to_idx:
                 continue
-            title = str(book_info['title']).lower()
-            author = str(book_info['authors']).lower()
+            score = self._match_score(
+                query_lower, book_info['title'], book_info['authors']
+            )
+            if score is not None:
+                scored.append((score, book_id, book_info))
 
-            if query_lower in title or query_lower in author:
-                matches.append(Book(
-                    id=str(book_id),
-                    title=book_info['title'],
-                    author=book_info['authors']
-                ))
-
-        return matches[:max_results]
+        scored.sort(key=lambda x: x[0])
+        return [
+            Book(id=str(bid), title=info['title'], author=info['authors'])
+            for _, bid, info in scored[:max_results]
+        ]
 
     def get_all_books(self) -> List[Book]:
         return [
@@ -419,12 +440,14 @@ class HybridEmbeddings(EmbeddingSource):
 
     def search_books(self, query: str, max_results: int = 10) -> List[Book]:
         query_lower = query.lower()
-        matches = []
+        scored = []
         for book_id in self.book_ids:
             book = self.books[book_id]
-            if query_lower in book.title.lower() or query_lower in book.author.lower():
-                matches.append(book)
-        return matches[:max_results]
+            score = self._match_score(query_lower, book.title, book.author)
+            if score is not None:
+                scored.append((score, book))
+        scored.sort(key=lambda x: x[0])
+        return [book for _, book in scored[:max_results]]
 
     def get_all_books(self) -> List[Book]:
         return [self.books[bid] for bid in self.book_ids]
