@@ -30,31 +30,27 @@ class PCAVibeIdentifier(VibeIdentifier):
         self.vibe_centroid = None
         
     def fit(self, book_embeddings: np.ndarray) -> None:
-        """Learn vibe subspace from seed books"""
+        """Learn vibe from seed books"""
         self.seed_embeddings = book_embeddings
-        
-        # fit pca on seed embeddings to find vibe subspace
+
+        # centroid in the original embedding space — PCA.transform centers
+        # on fit, so taking the mean of transformed seeds was always ~0
+        self.vibe_centroid = np.mean(book_embeddings, axis=0)
+
+        # PCA is still fit here so get_stats() can report explained variance
+        # as a diagnostic on how tightly the seeds cluster
         self.pca = PCA(n_components=self.n_components)
         self.pca.fit(book_embeddings)
-        
-        # compute centroid in the vibe subspace
-        transformed_seeds = self.pca.transform(book_embeddings)
-        self.vibe_centroid = np.mean(transformed_seeds, axis=0)
-        
+
     def find_similar(self, all_embeddings: np.ndarray, all_books: List[Book], n_results: int = 10, exclude_ids: set = None) -> List[BookResult]:
         """Find books similar to the vibe"""
-        if self.pca is None:
+        if self.vibe_centroid is None:
             raise ValueError("must call fit() first")
-            
-        # project all books into vibe subspace
-        projected_books = self.pca.transform(all_embeddings)
-        
-        # compute similarity to vibe centroid in subspace
-        similarities = cosine_similarity([self.vibe_centroid], projected_books)[0]
-        
-        # get top n most similar
-        top_indices = np.argsort(similarities)[::-1][:n_results*2]
-        
+
+        similarities = cosine_similarity([self.vibe_centroid], all_embeddings)[0]
+
+        top_indices = np.argsort(similarities)[::-1][:n_results * 2]
+
         results = []
         for idx in top_indices:
             if exclude_ids and all_books[idx].id in exclude_ids:
@@ -67,15 +63,6 @@ class PCAVibeIdentifier(VibeIdentifier):
 
             if len(results) >= n_results:
                 break
-        
-        projected_books = self.pca.transform(all_embeddings)
-        print(f"projected shape: {projected_books.shape}")
-        print(f"projected range: {projected_books.min():.6f} to {projected_books.max():.6f}")
-        print(f"vibe centroid: {self.vibe_centroid}")
-        
-        similarities = cosine_similarity([self.vibe_centroid], projected_books)[0]
-        print(f"similarity range: {similarities.min():.6f} to {similarities.max():.6f}")
-        print(f"unique similarities: {len(np.unique(similarities))}")
 
         return results
     
